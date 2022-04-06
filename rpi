@@ -1,0 +1,63 @@
+#! /usr/bin/env ruby
+
+require 'rss'
+require 'open-uri'
+require 'net/http'
+require 'socket'
+require 'timeout'
+
+SLEEP = 2
+slack_uri = URI ENV.fetch 'SLACK_NOTI_HOOK_URL'
+url = 'https://rpilocator.com/feed.rss'
+db = nil
+server = TCPServer.new 2000
+
+puts 'Listening on port 2000.'
+
+loop do
+  html_body = db&.items&.map do |item|
+    next unless item.title.include?('Stock Alert (US)')
+
+    %{<li>#{item.pubDate}: <a href="https://rpilocator.com/?country=US">#{item.title.gsub('Stock Alert (US): ', '')}</a></li>}
+  end&.compact&.join("\n\n")
+
+  URI.open(url) do |rss|
+    feed = RSS::Parser.parse rss
+    db_items = db&.items&.map { |item| { title: item.title, pubDate: item.pubDate } } || []
+    feed_items = feed.items.map { |item| { title: item.title, pubDate: item.pubDate } }
+    new_items = feed_items - db_items
+    new_titles = new_items&.map { |item| item[:title] }
+    skip_notification = true unless db
+    db = feed
+
+    if new_titles.any? { |title| title.include?('Stock Alert (US)') }
+      next if skip_notification
+
+      message = new_items.map do |item|
+        "<https://rpilocator.com/?country=US|#{item[:title]}> - #{item[:pubDate]}"
+      end.join("\n\n")
+
+      Net::HTTP.start(slack_uri.host, slack_uri.port, use_ssl: true) do |http|
+        request = Net::HTTP::Post.new slack_uri
+        request['Content-Type'] = 'application/json'
+        request.body = %{{ "text": "#{message}" }}
+        http.request request
+      end
+    end
+  end
+
+  # Run health check server while sleeping
+  Timeout::timeout(SLEEP) do
+    client = server.accept
+    puts 'Receiving data ' + Time.now.ctime
+    client.gets
+    client.puts "HTTP/1.1 200 OK"
+    client.puts "Content-Type: text/html; charset=utf-8\n\n"
+    client.puts '<link rel="stylesheet" href="https://cdn.simplecss.org/simple.min.css">'
+    client.puts "<header><h1>RPi Locator RSS Feed (US)</h1></header>"
+    client.puts "<main><ul>#{html_body&.gsub(' +0000', '') || '<li>None</li>'}</ul></main>"
+    client.puts "<footer>Made with 😡 by <a href='https://boehs.com'>Eric Boehs</a>.</footer>"
+    client.close
+  end
+rescue Timeout::Error
+end
