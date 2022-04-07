@@ -12,7 +12,9 @@ url = 'https://rpilocator.com/feed.rss'
 db = nil
 server = TCPServer.new 2000
 
-puts 'Listening on port 2000.'
+puts "Running rpi-locator-checker-#{ENV['GIT_SHA']}"
+puts 'Listening on http://127.0.0.1:2000'
+
 
 loop do
   html_body = db&.items&.map do |item|
