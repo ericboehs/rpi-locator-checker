@@ -33,7 +33,7 @@ loop do
     db = feed
 
     if new_titles.any? { |title| title.include?('Stock Alert (US)') }
-      next if skip_notification
+      next if skip_notification unless ENV['ALWAYS_NOTIFY']
 
       message = new_items.map do |item|
         "<https://rpilocator.com/?country=US|#{item[:title]}> - #{item[:pubDate]}"
