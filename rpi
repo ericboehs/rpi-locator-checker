@@ -7,14 +7,23 @@ require 'socket'
 require 'timeout'
 
 SLEEP = 2
-slack_uri = URI ENV.fetch 'SLACK_NOTI_HOOK_URL'
+SLACK_URI = URI ENV.fetch 'SLACK_NOTI_HOOK_URL'
 url = 'https://rpilocator.com/feed.rss'
 db = nil
 server = TCPServer.new 2000
 
+def slack_noti(message)
+  Net::HTTP.start(SLACK_URI.host, SLACK_URI.port, use_ssl: true) do |http|
+    request = Net::HTTP::Post.new SLACK_URI
+    request['Content-Type'] = 'application/json'
+    request.body = %{{ "text": "#{message}" }}
+    http.request request
+  end
+end
+
 puts "Running rpi-locator-checker-#{ENV['GIT_SHA']}"
 puts 'Listening on http://127.0.0.1:2000'
-
+slack_noti 'rpi command booted'
 
 loop do
   html_body = db&.items&.map do |item|
@@ -39,12 +48,7 @@ loop do
         "<https://rpilocator.com/?country=US|#{item[:title]}> - #{item[:pubDate]}"
       end.join("\n\n")
 
-      Net::HTTP.start(slack_uri.host, slack_uri.port, use_ssl: true) do |http|
-        request = Net::HTTP::Post.new slack_uri
-        request['Content-Type'] = 'application/json'
-        request.body = %{{ "text": "#{message}" }}
-        http.request request
-      end
+      slack_noti message
     end
   end
 
